@@ -57,22 +57,24 @@ namespace SftpDirectoryMirror
             }
 
             // SFTPサーバ上のディレクトリ内のエントリ一覧を取得
-            var files = client.ListDirectory(sftpPath);
-            foreach (var file in files)
+            var entries = client.ListDirectory(sftpPath);
+            foreach (var entry in entries)
             {
                 // "." と ".." はスキップ
-                if (file.Name == "." || file.Name == "..")
+                if (entry.Name == "." || entry.Name == "..")
                     continue;
 
-                string sftpFullPath = file.FullName;
-                string localFullPath = Path.Combine(localPath, file.Name);
+                // マルチバイト文字を含む可能性に備えて、ファイル名を正規化
+                string safeName = entry.Name.Normalize();  
+                string sftpFullPath = $"{sftpPath.TrimEnd('/')}/{safeName}";
+                string localFullPath = Path.Combine(localPath, safeName);
 
-                if (file.IsDirectory)
+                if (entry.IsDirectory)
                 {
                     // ディレクトリの場合は再帰的に処理
                     ProcessSftpDirectory(client, sftpFullPath, localFullPath);
                 }
-                else if (file.IsRegularFile)
+                else if (entry.IsRegularFile)
                 {
                     // ファイルの場合：ローカルに「Dummy」文字列を内容とするファイルを作成
                     try
