@@ -1,26 +1,37 @@
 using System;
 using System.IO;
-using System.Linq;
-using System.Net;
+using Renci.SshNet;
 
-namespace FtpDirectoryMirror
+namespace SftpDirectoryMirror
 {
     class Program
     {
-        // FTPサーバのルートURL（末尾に "/" を付ける）
-        private const string FtpRootUrl = "ftp://example.com/path/to/source/";
-        // ローカルに作成するルートパス
-        private const string LocalRootPath = @"C:\FtpMirror";
+        // SFTPサーバーの接続情報
+        private const string SftpHost = "example.com";
+        private const int SftpPort = 22;
+        private const string SftpUsername = "username";
+        private const string SftpPassword = "password";
 
-        // 必要に応じて FTP サーバのユーザー名とパスワードを指定
-        private static readonly NetworkCredential FtpCredentials = new NetworkCredential("username", "password");
+        // SFTPサーバ上の対象ディレクトリ（ルートパス）
+        private const string SftpRootPath = "/path/to/source";
+
+        // ローカルに作成するルートパス
+        private const string LocalRootPath = @"C:\SftpMirror";
 
         static void Main(string[] args)
         {
             try
             {
-                Console.WriteLine("FTPサーバーのディレクトリ構造をミラーリング開始...");
-                ProcessFtpDirectory(FtpRootUrl, LocalRootPath, FtpCredentials);
+                Console.WriteLine("SFTPサーバーのディレクトリ構造をミラーリング開始...");
+
+                // SSH.NET の SftpClient を使用して SFTP 接続を確立
+                using (var client = new SftpClient(SftpHost, SftpPort, SftpUsername, SftpPassword))
+                {
+                    client.Connect();
+                    ProcessSftpDirectory(client, SftpRootPath, LocalRootPath);
+                    client.Disconnect();
+                }
+
                 Console.WriteLine("処理完了しました。");
             }
             catch (Exception ex)
@@ -30,70 +41,48 @@ namespace FtpDirectoryMirror
         }
 
         /// <summary>
-        /// FTPサーバ上のディレクトリを再帰的に走査し、同じ構造をローカルに作成します。
+        /// SFTPサーバ上のディレクトリを再帰的に走査し、同じ構造をローカルに作成します。
         /// ファイルは同名で作成し、内容は「Dummy」とします。
         /// </summary>
-        /// <param name="ftpUrl">FTP上の対象ディレクトリのURL（末尾に "/" が必要）</param>
-        /// <param name="localPath">ローカルで作成するディレクトリのパス</param>
-        /// <param name="cred">FTP認証情報</param>
-        private static void ProcessFtpDirectory(string ftpUrl, string localPath, NetworkCredential cred)
+        /// <param name="client">接続済みの SftpClient インスタンス</param>
+        /// <param name="sftpPath">SFTPサーバ上の対象ディレクトリのパス</param>
+        /// <param name="localPath">ローカルに作成するディレクトリのパス</param>
+        private static void ProcessSftpDirectory(SftpClient client, string sftpPath, string localPath)
         {
-            // ローカルにディレクトリが存在しない場合は作成
+            // ローカルにディレクトリが存在しなければ作成
             if (!Directory.Exists(localPath))
             {
                 Directory.CreateDirectory(localPath);
                 Console.WriteLine("作成: " + localPath);
             }
 
-            // FTPサーバ上のディレクトリ一覧を取得
-            FtpWebRequest listRequest = (FtpWebRequest)WebRequest.Create(ftpUrl);
-            listRequest.Method = WebRequestMethods.Ftp.ListDirectoryDetails;
-            listRequest.Credentials = cred;
-
-            using (FtpWebResponse listResponse = (FtpWebResponse)listRequest.GetResponse())
-            using (StreamReader reader = new StreamReader(listResponse.GetResponseStream()))
+            // SFTPサーバ上のディレクトリ内のエントリ一覧を取得
+            var files = client.ListDirectory(sftpPath);
+            foreach (var file in files)
             {
-                while (!reader.EndOfStream)
+                // "." と ".." はスキップ
+                if (file.Name == "." || file.Name == "..")
+                    continue;
+
+                string sftpFullPath = file.FullName;
+                string localFullPath = Path.Combine(localPath, file.Name);
+
+                if (file.IsDirectory)
                 {
-                    string line = reader.ReadLine();
-                    if (string.IsNullOrWhiteSpace(line))
-                        continue;
-
-                    // Unix形式の場合、最初の文字でファイル種別を判断
-                    // 例: "drwxr-xr-x  2 user group 4096 Jan 01 12:34 dirname"
-                    //     "-rw-r--r--  1 user group   123 Jan 01 12:34 filename.txt"
-                    string[] tokens = line.Split(new char[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
-                    if (tokens.Length < 9)
+                    // ディレクトリの場合は再帰的に処理
+                    ProcessSftpDirectory(client, sftpFullPath, localFullPath);
+                }
+                else if (file.IsRegularFile)
+                {
+                    // ファイルの場合：ローカルに「Dummy」文字列を内容とするファイルを作成
+                    try
                     {
-                        Console.WriteLine("解析不能なエントリ: " + line);
-                        continue;
+                        File.WriteAllText(localFullPath, "Dummy");
+                        Console.WriteLine("ファイル作成: " + localFullPath);
                     }
-
-                    string permissions = tokens[0];
-                    // ファイル名は tokens[8] 以降（スペースを含む場合の対応）
-                    string name = string.Join(" ", tokens.Skip(8));
-                    // FTP上のフルパス（ftpUrlは末尾に "/" がある前提）
-                    string ftpFullPath = ftpUrl + name;
-                    // ローカル上のフルパス
-                    string localFullPath = Path.Combine(localPath, name);
-
-                    if (permissions[0] == 'd')
+                    catch (Exception ex)
                     {
-                        // ディレクトリの場合：再帰的に処理
-                        ProcessFtpDirectory(ftpFullPath + "/", localFullPath, cred);
-                    }
-                    else
-                    {
-                        // ファイルの場合：ダミーファイルを作成
-                        try
-                        {
-                            File.WriteAllText(localFullPath, "Dummy");
-                            Console.WriteLine("ファイル作成: " + localFullPath);
-                        }
-                        catch (Exception ex)
-                        {
-                            Console.WriteLine("ファイル作成失敗: " + localFullPath + " (" + ex.Message + ")");
-                        }
+                        Console.WriteLine("ファイル作成失敗: " + localFullPath + " (" + ex.Message + ")");
                     }
                 }
             }
