@@ -1,0 +1,102 @@
+using System;
+using System.IO;
+using System.Linq;
+using System.Net;
+
+namespace FtpDirectoryMirror
+{
+    class Program
+    {
+        // FTPサーバのルートURL（末尾に "/" を付ける）
+        private const string FtpRootUrl = "ftp://example.com/path/to/source/";
+        // ローカルに作成するルートパス
+        private const string LocalRootPath = @"C:\FtpMirror";
+
+        // 必要に応じて FTP サーバのユーザー名とパスワードを指定
+        private static readonly NetworkCredential FtpCredentials = new NetworkCredential("username", "password");
+
+        static void Main(string[] args)
+        {
+            try
+            {
+                Console.WriteLine("FTPサーバーのディレクトリ構造をミラーリング開始...");
+                ProcessFtpDirectory(FtpRootUrl, LocalRootPath, FtpCredentials);
+                Console.WriteLine("処理完了しました。");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("エラーが発生しました: " + ex.Message);
+            }
+        }
+
+        /// <summary>
+        /// FTPサーバ上のディレクトリを再帰的に走査し、同じ構造をローカルに作成します。
+        /// ファイルは同名で作成し、内容は「Dummy」とします。
+        /// </summary>
+        /// <param name="ftpUrl">FTP上の対象ディレクトリのURL（末尾に "/" が必要）</param>
+        /// <param name="localPath">ローカルで作成するディレクトリのパス</param>
+        /// <param name="cred">FTP認証情報</param>
+        private static void ProcessFtpDirectory(string ftpUrl, string localPath, NetworkCredential cred)
+        {
+            // ローカルにディレクトリが存在しない場合は作成
+            if (!Directory.Exists(localPath))
+            {
+                Directory.CreateDirectory(localPath);
+                Console.WriteLine("作成: " + localPath);
+            }
+
+            // FTPサーバ上のディレクトリ一覧を取得
+            FtpWebRequest listRequest = (FtpWebRequest)WebRequest.Create(ftpUrl);
+            listRequest.Method = WebRequestMethods.Ftp.ListDirectoryDetails;
+            listRequest.Credentials = cred;
+
+            using (FtpWebResponse listResponse = (FtpWebResponse)listRequest.GetResponse())
+            using (StreamReader reader = new StreamReader(listResponse.GetResponseStream()))
+            {
+                while (!reader.EndOfStream)
+                {
+                    string line = reader.ReadLine();
+                    if (string.IsNullOrWhiteSpace(line))
+                        continue;
+
+                    // Unix形式の場合、最初の文字でファイル種別を判断
+                    // 例: "drwxr-xr-x  2 user group 4096 Jan 01 12:34 dirname"
+                    //     "-rw-r--r--  1 user group   123 Jan 01 12:34 filename.txt"
+                    string[] tokens = line.Split(new char[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                    if (tokens.Length < 9)
+                    {
+                        Console.WriteLine("解析不能なエントリ: " + line);
+                        continue;
+                    }
+
+                    string permissions = tokens[0];
+                    // ファイル名は tokens[8] 以降（スペースを含む場合の対応）
+                    string name = string.Join(" ", tokens.Skip(8));
+                    // FTP上のフルパス（ftpUrlは末尾に "/" がある前提）
+                    string ftpFullPath = ftpUrl + name;
+                    // ローカル上のフルパス
+                    string localFullPath = Path.Combine(localPath, name);
+
+                    if (permissions[0] == 'd')
+                    {
+                        // ディレクトリの場合：再帰的に処理
+                        ProcessFtpDirectory(ftpFullPath + "/", localFullPath, cred);
+                    }
+                    else
+                    {
+                        // ファイルの場合：ダミーファイルを作成
+                        try
+                        {
+                            File.WriteAllText(localFullPath, "Dummy");
+                            Console.WriteLine("ファイル作成: " + localFullPath);
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine("ファイル作成失敗: " + localFullPath + " (" + ex.Message + ")");
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
