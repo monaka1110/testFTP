@@ -24,7 +24,6 @@ namespace SftpDirectoryMirror
             {
                 Console.WriteLine("SFTPサーバーのディレクトリ構造をミラーリング開始...");
 
-                // SSH.NET の SftpClient を使用して SFTP 接続を確立
                 using (var client = new SftpClient(SftpHost, SftpPort, SftpUsername, SftpPassword))
                 {
                     client.Connect();
@@ -64,8 +63,13 @@ namespace SftpDirectoryMirror
                 if (entry.Name == "." || entry.Name == "..")
                     continue;
 
-                // マルチバイト文字を含む可能性に備えて、ファイル名を正規化
-                string safeName = entry.Name.Normalize();  
+                // エントリ名をそのまま使うか正規化するかの判断
+                // 全角英数字の場合は変換せず、そのまま使用する
+                string safeName = IsAllFullWidthAlphaNumeric(entry.Name)
+                    ? entry.Name
+                    : entry.Name.Normalize();
+
+                // パスを構築（sftpPath は末尾に '/' が含まれていない場合も考慮）
                 string sftpFullPath = $"{sftpPath.TrimEnd('/')}/{safeName}";
                 string localFullPath = Path.Combine(localPath, safeName);
 
@@ -88,6 +92,35 @@ namespace SftpDirectoryMirror
                     }
                 }
             }
+        }
+
+        /// <summary>
+        /// 指定された文字列が全て全角英数字で構成されているかどうかを判定します。
+        /// 対象の文字は全角数字（U+FF10～U+FF19）および全角英字（U+FF21～U+FF3A, U+FF41～U+FF5A）です。
+        /// </summary>
+        /// <param name="s">チェック対象の文字列</param>
+        /// <returns>すべて全角英数字であれば true、そうでなければ false</returns>
+        private static bool IsAllFullWidthAlphaNumeric(string s)
+        {
+            if (string.IsNullOrEmpty(s))
+                return false;
+
+            foreach (char c in s)
+            {
+                // 全角数字の場合
+                if (c >= '\uFF10' && c <= '\uFF19')
+                    continue;
+                // 全角大文字アルファベットの場合
+                if (c >= '\uFF21' && c <= '\uFF3A')
+                    continue;
+                // 全角小文字アルファベットの場合
+                if (c >= '\uFF41' && c <= '\uFF5A')
+                    continue;
+
+                // 1文字でも上記以外があれば false を返す
+                return false;
+            }
+            return true;
         }
     }
 }
