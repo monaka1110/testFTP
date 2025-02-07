@@ -1,0 +1,44 @@
+using System;
+using System.IO;
+
+class Program
+{
+    static void Main(string[] args)
+    {
+        // CSVファイルのパスを指定
+        string csvFilePath = @"C:\path\to\your\file.csv"; // CSVファイルの場所
+
+        // 作成する場所を C:\temp に設定
+        string baseDirectory = @"C:\temp";
+
+        try
+        {
+            // CSVファイルの内容を読み込む
+            var filePaths = File.ReadAllLines(csvFilePath);
+
+            foreach (var filePath in filePaths)
+            {
+                // C:\temp を基準にした相対パスを取得
+                string relativePath = filePath.Substring(3); // "C:\" を取り除く
+                string fullDirectoryPath = Path.Combine(baseDirectory, Path.GetDirectoryName(relativePath));
+
+                // ディレクトリが存在しない場合は作成する
+                if (!Directory.Exists(fullDirectoryPath))
+                {
+                    Directory.CreateDirectory(fullDirectoryPath);
+                    Console.WriteLine($"ディレクトリを作成しました: {fullDirectoryPath}");
+                }
+
+                // ファイルを作成し、"dummy"という内容を書き込む
+                File.WriteAllText(Path.Combine(baseDirectory, relativePath), "dummy");
+                Console.WriteLine($"ファイルを作成しました: {Path.Combine(baseDirectory, relativePath)}");
+            }
+
+            Console.WriteLine("すべてのファイルとディレクトリが作成されました。");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"エラーが発生しました: {ex.Message}");
+        }
+    }
+}
