@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Text;
 
 class Program
 {
@@ -13,8 +14,8 @@ class Program
 
         try
         {
-            // CSVファイルの内容を読み込む
-            var filePaths = File.ReadAllLines(csvFilePath);
+            // UTF-8でCSVファイルの内容を読み込む
+            var filePaths = File.ReadAllLines(csvFilePath, Encoding.UTF8);
 
             foreach (var filePath in filePaths)
             {
@@ -30,7 +31,7 @@ class Program
                 }
 
                 // ファイルを作成し、"dummy"という内容を書き込む
-                File.WriteAllText(Path.Combine(baseDirectory, relativePath), "dummy");
+                File.WriteAllText(Path.Combine(baseDirectory, relativePath), "dummy", Encoding.UTF8);
                 Console.WriteLine($"ファイルを作成しました: {Path.Combine(baseDirectory, relativePath)}");
             }
 
