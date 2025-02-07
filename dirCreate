@@ -14,25 +14,31 @@ class Program
 
         try
         {
-            // UTF-8でCSVファイルの内容を読み込む
-            var filePaths = File.ReadAllLines(csvFilePath, Encoding.UTF8);
-
-            foreach (var filePath in filePaths)
+            // StreamReaderを使ってShift-JISエンコーディングでファイルを読み込む
+            using (var reader = new StreamReader(csvFilePath, Encoding.GetEncoding("shift_jis")))
             {
-                // C:\temp を基準にした相対パスを取得
-                string relativePath = filePath.Substring(3); // "C:\" を取り除く
-                string fullDirectoryPath = Path.Combine(baseDirectory, Path.GetDirectoryName(relativePath));
-
-                // ディレクトリが存在しない場合は作成する
-                if (!Directory.Exists(fullDirectoryPath))
+                string line;
+                while ((line = reader.ReadLine()) != null)
                 {
-                    Directory.CreateDirectory(fullDirectoryPath);
-                    Console.WriteLine($"ディレクトリを作成しました: {fullDirectoryPath}");
-                }
+                    // C:\temp を基準にした相対パスを取得
+                    string relativePath = line.Substring(3); // "C:\" を取り除く
+                    string fullDirectoryPath = Path.Combine(baseDirectory, Path.GetDirectoryName(relativePath));
 
-                // ファイルを作成し、"dummy"という内容を書き込む
-                File.WriteAllText(Path.Combine(baseDirectory, relativePath), "dummy", Encoding.UTF8);
-                Console.WriteLine($"ファイルを作成しました: {Path.Combine(baseDirectory, relativePath)}");
+                    // ディレクトリが存在しない場合は作成する
+                    if (!Directory.Exists(fullDirectoryPath))
+                    {
+                        Directory.CreateDirectory(fullDirectoryPath);
+                        Console.WriteLine($"ディレクトリを作成しました: {fullDirectoryPath}");
+                    }
+
+                    // ファイルを作成し、"dummy"という内容を書き込む
+                    using (var writer = new StreamWriter(Path.Combine(baseDirectory, relativePath), false, Encoding.GetEncoding("shift_jis")))
+                    {
+                        writer.WriteLine("dummy");
+                    }
+
+                    Console.WriteLine($"ファイルを作成しました: {Path.Combine(baseDirectory, relativePath)}");
+                }
             }
 
             Console.WriteLine("すべてのファイルとディレクトリが作成されました。");
